@@ -6,11 +6,11 @@ python -m pip install -r requirements.txt
 PYTHONPATH=src uvicorn nonprofit_cost_service:app --reload
 ```
 
-I wire this into a Next.js admin screen like any typed JSON route: post a donor receipt, volunteer reminder, or campaign report request, then render the returned decision. The Python service keeps the model call and its accounting in one place. Infrai gives you one api and an OpenAI-compatible `base_url`, so the official client stays familiar while a single `INFRAI_API_KEY` covers the call.
+I would wire this into a Next.js admin screen the same way I wire any typed JSON route: post a donor receipt, volunteer reminder, or campaign report request, then render the returned decision. The Python service keeps the model call and its accounting together. Infrai supplies an OpenAI-compatible `base_url`, so the official client stays familiar while a single `INFRAI_API_KEY` covers the call.
 
 ## The request your app sends
 
-The endpoint is `POST /drafts`. Each request carries a stable `request_id`, the workflow context, and the max acceptable cost for that one call.
+The endpoint is `POST /drafts`. Each request carries a stable `request_id`, the workflow-specific context, and the maximum acceptable cost for that one call.
 
 ```bash
 curl --request POST http://127.0.0.1:8000/drafts \
@@ -24,29 +24,29 @@ curl --request POST http://127.0.0.1:8000/drafts \
   }'
 ```
 
-A successful response holds the draft, the serving vendor, the exact call cost, and `decision: "ready"` when observed cost is within the boundary. Exceed it and the draft still returns with `decision: "review_cost"`, so an ops screen gets an explicit review state instead of burying spend in a monthly total.
+The successful response contains the draft, the serving vendor, the exact call cost, and `decision: "ready"` when the observed cost is within the request's boundary. When it exceeds that boundary, the draft still comes back with `decision: "review_cost"`, giving an operations screen an explicit review state instead of hiding the spend in a monthly total.
 
-The one real gotcha is response access: per-call metadata lives on the raw HTTP response headers. `with_raw_response.create(...)` keeps those headers, and `raw.parse()` returns the typed completion. The stable request ID also goes as the idempotency key; the SDK retries rate limits with backoff.
+The one real gotcha is response access: per-call metadata is on the raw HTTP response headers. `with_raw_response.create(...)` keeps those headers available, and `raw.parse()` returns the normal typed completion. The stable request ID is also sent as the idempotency key, while the SDK handles rate-limit retries with backoff.
 
 ## Run the receipt path without a frontend
 
-With the env var set, the script hits the same function the route uses:
+With the environment variable set, the script exercises the same function used by the route:
 
 ```bash
 PYTHONPATH=src python src/run_receipt.py
 ```
 
-It prints JSON shaped like the API response. Change `workflow` and `context` in the script to try `volunteer_reminder` or `campaign_report`; each picks a narrow system prompt that keeps the caller's operational details.
+It prints JSON shaped like the API response. Change `workflow` and `context` in the script to try `volunteer_reminder` or `campaign_report`; each one selects a narrow system prompt that preserves the operational details supplied by the caller.
 
 ## Verify the decision
 
-The focused test sends a donor receipt whose measured call cost is `0.013500` against a `0.010000` limit. Expected: HTTP 200 with `decision: "review_cost"` and the measured cost kept for the ledger.
+The focused test sends a donor receipt whose measured call cost is `0.013500` against a `0.010000` limit. The expected result is HTTP 200 with `decision: "review_cost"` and the measured cost retained for the ledger.
 
 ```bash
 PYTHONPATH=src pytest -q
 ```
 
-The test only swaps the model boundary, so it is deterministic and needs no API key. Request validation, JSON serialization, and the cost decision still run through the FastAPI route.
+The test replaces only the model boundary, so it is deterministic and does not require an API key. Request validation, JSON serialization, and the cost decision still run through the FastAPI route.
 
 ## License
 
